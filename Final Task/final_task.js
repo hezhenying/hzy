@@ -120,8 +120,10 @@ function TransferFunctionTexture(scalar)
 
 function main()
 {   
+    var volume = new KVS.LobsterData();
+    var screen = new KVS.THREEScreen();
     var stats = new Stats();
-    stats.showPanel( 0); // 0: fps, 1: ms, 2: mb, 3+: custom
+    stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: custom
     document.body.appendChild( stats.dom );
     function animate() {
         stats.begin();
@@ -131,90 +133,115 @@ function main()
     requestAnimationFrame( animate );
 
    var FizzyText = new function() {
-   this.scalar = 128.0;
+    this.scalar = 255;
     };
 
     var gui = new dat.GUI();
-    gui.add(FizzyText, 'scalar', 0, 255);
-    var volume = new KVS.LobsterData();
-    var screen = new KVS.THREEScreen();
+    var controller =gui.add(FizzyText, 'scalar', 0, 255).step(1);
+    controller.onFinishChange(function(){
+        screen.scene.remove(raycaster_mesh);
+        var transfer_function_texture = TransferFunctionTexture(FizzyText.scalar);
+        var raycaster_material = new THREE.ShaderMaterial( {
+            vertexShader: document.getElementById( 'raycaster.vert' ).textContent,
+            fragmentShader: document.getElementById( 'raycaster.frag' ).textContent,
+            side: THREE.FrontSide,
+            uniforms: {
+                volume_resolution: { type: "v3", value: volume.resolution },
+                exit_points: { type: "t", value: exit_texture },
+                volume_data: { type: "t", value: volume_texture },
+                transfer_function_data: { type: "t", value: transfer_function_texture },
+                light_position: { type: 'v3', value: screen.light.position },
+                camera_position: { type: 'v3', value: screen.camera.position },
+                background_color: { type: 'v3', value: new THREE.Vector3().fromArray( screen.renderer.getClearColor().toArray() ) },
+            }
+        });
 
-    screen.init( volume, {
-        width: window.innerWidth*0.8,
-        targetDom: document.getElementById('display'),
-        height: window.innerHeight,
-        enableAutoResize: false
-    });
-    screen.loop();
-//    screen.dynamicDampingFactor = 0.3;
-//    screen.trackball.rotatetSpeed = 1.0;
-//    screen.trackball.noPan = false;
-//    screen.trackball.noZoom = false;
-//    screen.renderer.setClearColor( new THREE.Color( "black" ) );
+        var raycaster_mesh = new THREE.Mesh( bounding_geometry, raycaster_material );
+        screen.scene.add( raycaster_mesh );
+    })
+
+   // loop(FizzyText.scalar);
+   
         
-    var exit_buffer = new THREE.Scene();
-    var exit_texture = new THREE.WebGLRenderTarget(
-        screen.width, screen.height,
+
+        screen.init( volume, {
+            width: window.innerWidth*0.8,
+            targetDom: document.getElementById('display'),
+            height: window.innerHeight,
+            enableAutoResize: false
+        });
+
+        screen.loop();
+    //    screen.dynamicDampingFactor = 0.3;
+    //    screen.trackball.rotatetSpeed = 1.0;
+    //    screen.trackball.noPan = false;
+    //    screen.trackball.noZoom = false;
+    //    screen.renderer.setClearColor( new THREE.Color( "black" ) );
+            
+        var exit_buffer = new THREE.Scene();
+        var exit_texture = new THREE.WebGLRenderTarget(
+            screen.width, screen.height,
+            {
+                minFilter: THREE.LinearFilter,
+                magFilter: THREE.LinearFilter,
+                wrapS: THREE.ClampToEdgeWrapping,
+                wrapT: THREE.ClampToEdgeWrapping,
+                format: THREE.RGBFormat,
+                type: THREE.FloatType,
+                generateMipmaps: false
+            }
+        );
+
+        var bounding_geometry = BoundingBoxGeometry( volume );
+        var volume_texture = VolumeTexture( volume );
+        var transfer_function_texture = TransferFunctionTexture(FizzyText.scalar);
+
+        var bounding_material = new THREE.ShaderMaterial( {
+            vertexShader: document.getElementById( 'bounding.vert' ).textContent,
+            fragmentShader: document.getElementById( 'bounding.frag' ).textContent,
+            side: THREE.BackSide
+        });
+
+        var bounding_mesh = new THREE.Mesh( bounding_geometry, bounding_material );
+        exit_buffer.add( bounding_mesh );
+
+        var raycaster_material = new THREE.ShaderMaterial( {
+            vertexShader: document.getElementById( 'raycaster.vert' ).textContent,
+            fragmentShader: document.getElementById( 'raycaster.frag' ).textContent,
+            side: THREE.FrontSide,
+            uniforms: {
+                volume_resolution: { type: "v3", value: volume.resolution },
+                exit_points: { type: "t", value: exit_texture },
+                volume_data: { type: "t", value: volume_texture },
+                transfer_function_data: { type: "t", value: transfer_function_texture },
+                light_position: { type: 'v3', value: screen.light.position },
+                camera_position: { type: 'v3', value: screen.camera.position },
+                background_color: { type: 'v3', value: new THREE.Vector3().fromArray( screen.renderer.getClearColor().toArray() ) },
+            }
+        });
+
+        var raycaster_mesh = new THREE.Mesh( bounding_geometry, raycaster_material );
+        screen.scene.add( raycaster_mesh );
+
+        document.addEventListener( 'mousemove', function() {
+            screen.light.position.copy( screen.camera.position );
+        });
+
+        window.addEventListener( 'resize', function() {
+            screen.resize( [ window.innerWidth*0.8, window.innerHeight ] );
+        });
+
+        screen.loop();
+
+        screen.draw = function()
         {
-            minFilter: THREE.LinearFilter,
-            magFilter: THREE.LinearFilter,
-            wrapS: THREE.ClampToEdgeWrapping,
-            wrapT: THREE.ClampToEdgeWrapping,
-            format: THREE.RGBFormat,
-            type: THREE.FloatType,
-            generateMipmaps: false
+            if ( screen.renderer == undefined ) return;
+            screen.scene.updateMatrixWorld();
+            screen.trackball.handleResize();
+            screen.renderer.render( exit_buffer, screen.camera, exit_texture, true );
+            screen.renderer.render( screen.scene, screen.camera );
+            screen.trackball.update();
         }
-    );
-
-    var bounding_geometry = BoundingBoxGeometry( volume );
-    var volume_texture = VolumeTexture( volume );
-    var transfer_function_texture = TransferFunctionTexture(FizzyText.scalar);
-
-    var bounding_material = new THREE.ShaderMaterial( {
-        vertexShader: document.getElementById( 'bounding.vert' ).textContent,
-        fragmentShader: document.getElementById( 'bounding.frag' ).textContent,
-        side: THREE.BackSide
-    });
-
-    var bounding_mesh = new THREE.Mesh( bounding_geometry, bounding_material );
-    exit_buffer.add( bounding_mesh );
-
-    var raycaster_material = new THREE.ShaderMaterial( {
-        vertexShader: document.getElementById( 'raycaster.vert' ).textContent,
-        fragmentShader: document.getElementById( 'raycaster.frag' ).textContent,
-        side: THREE.FrontSide,
-        uniforms: {
-            volume_resolution: { type: "v3", value: volume.resolution },
-            exit_points: { type: "t", value: exit_texture },
-            volume_data: { type: "t", value: volume_texture },
-            transfer_function_data: { type: "t", value: transfer_function_texture },
-            light_position: { type: 'v3', value: screen.light.position },
-            camera_position: { type: 'v3', value: screen.camera.position },
-            background_color: { type: 'v3', value: new THREE.Vector3().fromArray( screen.renderer.getClearColor().toArray() ) },
-        }
-    });
-
-    var raycaster_mesh = new THREE.Mesh( bounding_geometry, raycaster_material );
-    screen.scene.add( raycaster_mesh );
-
-    document.addEventListener( 'mousemove', function() {
-        screen.light.position.copy( screen.camera.position );
-    });
-
-    window.addEventListener( 'resize', function() {
-        screen.resize( [ window.innerWidth*0.8, window.innerHeight ] );
-    });
-
-    screen.loop();
-
-    screen.draw = function()
-    {
-        if ( screen.renderer == undefined ) return;
-        screen.scene.updateMatrixWorld();
-        screen.trackball.handleResize();
-        screen.renderer.render( exit_buffer, screen.camera, exit_texture, true );
-        screen.renderer.render( screen.scene, screen.camera );
-        screen.trackball.update();
-    }
-
+        
+    
 }
